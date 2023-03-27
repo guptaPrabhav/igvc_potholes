@@ -16,6 +16,8 @@ class imageSubscriber(Node):
     def __init__(self):
         
         super().__init__('image_subscriber')
+
+        # self.contour_depth = np.zeros([720,1280], np.uint16)
         
         self.color_sub = self.create_subscription(
             Image,
@@ -26,14 +28,14 @@ class imageSubscriber(Node):
 
         self.depth_sub = self.create_subscription(
             Image,
-            '/intel_realsense_r200_depth/depth/image_raw',
+            'camera/depth/image_rect_raw',
             self.depth_callback,
             10
         )
 
         self.info_sub = self.create_subscription(
             CameraInfo,
-            '/intel_realsense_r200_depth/depth/camera_info',
+            'camera/color/camera_info',
             self.info_callback,
             10
         )
@@ -46,11 +48,11 @@ class imageSubscriber(Node):
             10
         )
 
-        self.new_depth_publisher = self.create_publisher(
-            Image,
-            'new_output_depth',
-            10
-        )
+        # self.new_depth_publisher = self.create_publisher(
+        #     Image,
+        #     'new_output_depth',
+        #     10
+        # )
 
         self.pc_publisher = self.create_publisher(
             PointCloud2,
@@ -63,10 +65,10 @@ class imageSubscriber(Node):
             self.timer_callback
         )
 
-        self.contour_depth = np.zeros((720,1280), np.uint16)
-        self.new_output_depth_image = np.zeros((720,1280), np.uint16)
+        # self.contour_depth = np.zeros((720,1280), np.uint16)
+        # self.new_output_depth_image = np.zeros((720,1280), np.uint16)
 
-        self.depth_image = None
+        self.depth_image = np.zeros((720,1280), np.uint16)
         # self.rgbd_image = None
 
         self.pcd = None
@@ -75,9 +77,9 @@ class imageSubscriber(Node):
         self.depth_publisher.publish(
             self.br.cv2_to_imgmsg(self.contour_depth)
         )
-        self.new_depth_publisher.publish(
-            self.br.cv2_to_imgmsg(self.contour_depth)
-        )
+        # self.new_depth_publisher.publish(
+        #     self.br.cv2_to_imgmsg(self.contour_depth)
+        # )
         # self.pc_publisher.publish(
         #     self.pcd
         # )
@@ -85,8 +87,8 @@ class imageSubscriber(Node):
     def depth_callback(self, data):
         self.get_logger().info('Receiving depth frame')
         self.depth_image = self.br.imgmsg_to_cv2(data, 'passthrough')
-        cv2.imshow("original depth",self.depth_image)
-        cv2.waitKey(1)
+        # cv2.imshow("original depth",self.depth_image)
+        # cv2.waitKey(1)
 
     def info_callback(self, data):
         self.get_logger().info('Receiving camera info')
@@ -131,7 +133,7 @@ class imageSubscriber(Node):
         self.hsv_color_mask = cv2.inRange(self.hsv, self.lower_white_hsv, self.upper_white_hsv)
         # self.hsv_mask = cv2.bitwise_and(self.color_image, self.color_image, mask = self.hsv_color_mask)
 
-        cv2.imshow("hsv", self.hsv_color_mask)
+        # cv2.imshow("hsv", self.hsv_color_mask)
 
         # --------------------------------------------------------------------------------------------------------------
 
@@ -143,18 +145,15 @@ class imageSubscriber(Node):
 
         self.masked_image = cv2.bitwise_and(self.hsv_color_mask, self.mask)     # total mask, HSV + ROI
 
-        # cv2.imshow("masked_image", self.masked_image)
+        cv2.imshow("masked_image", self.masked_image)
 
         # -----------------------------------------------------------------------------------------------------------------
 
 
         # --------------------------------- image processing ---------------------------------------------------------------
 
-        # converting color image to gray image
-        self.gray = cv2.cvtColor(self.color_image, cv2.COLOR_RGB2GRAY)
-
         # applying a gaussian blur to the grayscale image
-        self.blur= cv2.GaussianBlur(self.gray, (3, 3), 0)
+        self.blur= cv2.GaussianBlur(self.masked_image, (3, 3), 0)
         
         # detecting edges in the image using canny
         self.edges = cv2.Canny(self.blur, 50, 150)
@@ -166,12 +165,12 @@ class imageSubscriber(Node):
         self.dilated = cv2.dilate(self.edges, self.kernel, iterations=1)
 
         # find the contours in the edged image
-        self.contours, self.hierarchy = cv2.findContours(self.masked_image, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        self.contours, self.hierarchy = cv2.findContours(self.dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
         # cnts = imutils.grab_contours(contours)
-        self.cnts = sorted(self.contours, key = cv2.contourArea, reverse = True)[:5]
+        self.cnts = sorted(self.contours, key = cv2.contourArea, reverse = True)[:1]
         
-        self.image_copy = self.gray.copy()
+        self.image_copy = self.color_image.copy()
 
         # self.approx = cv2.approxPolyDP(self.cnts, 0.01* cv2.arcLength(self.cnts, True), True)
         # if len(self.approx) >= 8 :
@@ -179,7 +178,8 @@ class imageSubscriber(Node):
 
         # self.contour_depth = np.zeros((240,320))      # Defined in the class constructor, hence not required here
 
-        self.pothole_mask = np.zeros((720,1280), dtype="uint8")
+        self.potholes = np.zeros((720,1280), dtype="uint8")
+        self.contour_depth = np.zeros((720,1280), np.uint16)
 
         for contour in self.cnts:
             
@@ -191,29 +191,33 @@ class imageSubscriber(Node):
                     # If I loop over every point in the coordinate array, this will become
                     # very inefficient.
                     
-                    self.pothole_mask = cv2.fillPoly(self.pothole_mask, pts = [contour], color =(255,255,255))
+                    self.potholes = cv2.fillPoly(self.potholes, pts = [contour], color =(255,255,255))
 
-                    # self.new_output_depth_image = cv2.bitwise_and(self.depth_image,self.depth_image,mask=self.pothole_mask)
-                    print("I work\n")
-                    # print(self.new_output_depth_image.dtype,"\n",self.pothole_mask.dtype)
-                    # print("\n", type(self.new_output_depth_image), "\n", type(self.pothole_mask))
+                    # self.new_output_depth_image = cv2.bitwise_and(self.depth_image,self.depth_image,mask=self.potholes)
+                    print("Pothole Found\n")
+                    # print(self.new_output_depth_image.dtype,"\n",self.potholes.dtype)
+                    # print("\n", type(self.new_output_depth_image), "\n", type(self.potholes))
 
-                    # for i in contour:           # Access each element in the depth image
-                    #     # np.append(              # and then store it to the corrosponding location in the np.array
-                    #     #     self.contour_depth,
-                    #     #     (np.flip(i)).flatten()
-                    #     # )
-                    #     depth_coordinate = (np.flip(i)).flatten()
-                    #     depth_x = depth_coordinate[0]
-                    #     depth_y = depth_coordinate[1]
-                    #     # print(depth_coordinate)
-                    #     # print(depth_x, "\t", depth_y)
-                    #     depth_data_xy = self.depth_image[depth_x][depth_y]
+                    for i in contour:           # Access each element in the depth image
+                        # np.append(              # and then store it to the corrosponding location in the np.array
+                        #     self.contour_depth,
+                        #     (np.flip(i)).flatten()
+                        # )
+                        depth_coordinate = (np.flip(i)).flatten()
+                        depth_x = depth_coordinate[0]
+                        depth_y = depth_coordinate[1]
+                        # print(depth_coordinate)
+                        # print(depth_x, "\t", depth_y)
+                        # depth_data_xy = self.depth_image[depth_x][depth_y]
 
-                    #     # print(depth_data_xy,"\n")
+                        # print(depth_data_xy,"\n")
                         
-                    #     self.contour_depth[depth_x][depth_y] = depth_data_xy
-
+                        # self.contour_depth[depth_x][depth_y] = depth_data_xy
+                        # print(type(self.depth_image))
+                        try:
+                            self.contour_depth[depth_x][depth_y] = self.depth_image[depth_x][depth_y]
+                        except:
+                            continue
                         # print(self.contour_depth,"\n")
 
                         # print((np.flip(i)).flatten(),"\t hello \t")
@@ -222,7 +226,7 @@ class imageSubscriber(Node):
                     # print(self.contour_depth,"\n")
                     # print(contour)
 
-        cv2.imshow("pothole mask", self.pothole_mask)
+        cv2.imshow("potholes", self.potholes)
         cv2.waitKey(1)
         # self.processing(self.color_image)
 
