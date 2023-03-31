@@ -7,9 +7,9 @@ from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from cv_bridge import CvBridge, CvBridgeError
 import cv2
-import open3d as o3d
+# import open3d as o3d
 import numpy as np
-import imutils
+# import imutils
 
 class imageSubscriber(Node):
     
@@ -65,7 +65,7 @@ class imageSubscriber(Node):
             self.timer_callback
         )
 
-        # self.contour_depth = np.zeros((720,1280), np.uint16)
+        self.contour_depth = np.zeros((720,1280), np.uint16)
         # self.new_output_depth_image = np.zeros((720,1280), np.uint16)
 
         self.depth_image = np.zeros((720,1280), np.uint16)
@@ -178,6 +178,8 @@ class imageSubscriber(Node):
 
         # self.contour_depth = np.zeros((240,320))      # Defined in the class constructor, hence not required here
 
+        # ----------------------------------- bitwise_and on depth image with pothole mask ---------------------------
+        
         self.potholes = np.zeros((720,1280), dtype="uint8")
         self.contour_depth = np.zeros((720,1280), np.uint16)
 
@@ -198,26 +200,32 @@ class imageSubscriber(Node):
                     # print(self.new_output_depth_image.dtype,"\n",self.potholes.dtype)
                     # print("\n", type(self.new_output_depth_image), "\n", type(self.potholes))
 
-                    for i in contour:           # Access each element in the depth image
-                        # np.append(              # and then store it to the corrosponding location in the np.array
-                        #     self.contour_depth,
-                        #     (np.flip(i)).flatten()
-                        # )
-                        depth_coordinate = (np.flip(i)).flatten()
-                        depth_x = depth_coordinate[0]
-                        depth_y = depth_coordinate[1]
-                        # print(depth_coordinate)
-                        # print(depth_x, "\t", depth_y)
-                        # depth_data_xy = self.depth_image[depth_x][depth_y]
+                    
+                    self.contour_depth = cv2.bitwise_and(self.depth_image, self.depth_image, mask=self.potholes)
+                    print("I also work !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+                    
+                    # No need for this slowass algorithm to get depth, just do bitwise_and :)
 
-                        # print(depth_data_xy,"\n")
+                    # for i in contour:           # Access each element in the depth image
+                    #     # np.append(              # and then store it to the corrosponding location in the np.array
+                    #     #     self.contour_depth,
+                    #     #     (np.flip(i)).flatten()
+                    #     # )
+                    #     depth_coordinate = (np.flip(i)).flatten()
+                    #     depth_x = depth_coordinate[0]
+                    #     depth_y = depth_coordinate[1]
+                    #     # print(depth_coordinate)
+                    #     # print(depth_x, "\t", depth_y)
+                    #     # depth_data_xy = self.depth_image[depth_x][depth_y]
+
+                    #     # print(depth_data_xy,"\n")
                         
-                        # self.contour_depth[depth_x][depth_y] = depth_data_xy
-                        # print(type(self.depth_image))
-                        try:
-                            self.contour_depth[depth_x][depth_y] = self.depth_image[depth_x][depth_y]
-                        except:
-                            continue
+                    #     # self.contour_depth[depth_x][depth_y] = depth_data_xy
+                    #     # print(type(self.depth_image))
+                    #     try:
+                    #         self.contour_depth[depth_x][depth_y] = self.depth_image[depth_x][depth_y]
+                    #     except:
+                    #         continue
                         # print(self.contour_depth,"\n")
 
                         # print((np.flip(i)).flatten(),"\t hello \t")
@@ -232,49 +240,49 @@ class imageSubscriber(Node):
 
     # ------------------------------------------- Point Cloud Processing --------------------------------
     
-    def pcd_processing(self):
+    # def pcd_processing(self):
         
-        self.output_depth_image = o3d.geometry.Image((self.contour_depth).astype(np.uint16))
-        self.output_color_image = o3d.geometry.Image((self.numpy_color_image).astype(np.uint8))
+    #     self.output_depth_image = o3d.geometry.Image((self.contour_depth).astype(np.uint16))
+    #     self.output_color_image = o3d.geometry.Image((self.numpy_color_image).astype(np.uint8))
 
-        print(self.output_color_image)
+    #     print(self.output_color_image)
         
-        print(self.output_depth_image)
-        print("\n")
+    #     print(self.output_depth_image)
+    #     print("\n")
 
-        self.rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
-            self.output_color_image,
-            self.output_depth_image # Change this original depth image to only the pothole depth.
-        )
+    #     self.rgbd_image = o3d.geometry.RGBDImage.create_from_color_and_depth(
+    #         self.output_color_image,
+    #         self.output_depth_image # Change this original depth image to only the pothole depth.
+    #     )
 
-        # print(self.rgbd_image, "\n")
+    #     # print(self.rgbd_image, "\n")
 
-        self.pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
-            self.rgbd_image,
-            o3d.camera.PinholeCameraIntrinsic(
-                height = 240,
-                width = 320,
-                fx = self.camera_info[0],
-                fy = self.camera_info[4],
-                cx = self.camera_info[2],
-                cy = self.camera_info[5]
-            )
-        )
+    #     self.pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+    #         self.rgbd_image,
+    #         o3d.camera.PinholeCameraIntrinsic(
+    #             height = 240,
+    #             width = 320,
+    #             fx = self.camera_info[0],
+    #             fy = self.camera_info[4],
+    #             cx = self.camera_info[2],
+    #             cy = self.camera_info[5]
+    #         )
+    #     )
 
-        # print(self.pcd)
+    #     # print(self.pcd)
 
-        self.pcd.transform(
-            [
-                [1, 0, 0, 0],
-                [0, -1, 0, 0],
-                [0, 0, -1, 0],
-                [0, 0, 0, 1]
-            ]
-        )
+    #     self.pcd.transform(
+    #         [
+    #             [1, 0, 0, 0],
+    #             [0, -1, 0, 0],
+    #             [0, 0, -1, 0],
+    #             [0, 0, 0, 1]
+    #         ]
+    #     )
 
-        print(self.pcd)
-        print()
-        print(type(self.pcd))
+    #     print(self.pcd)
+    #     print()
+    #     print(type(self.pcd))
 
     # ----------------------------------------------------------------------------------------------------------------
 
